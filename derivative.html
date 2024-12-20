@@ -1,0 +1,680 @@
+<!--
+
+Interactive Derivative Explorer
+===============================
+
+
+Visual Layout:
+--------------
+                   Info Panel
+                   f(x), f'(x)
+                      |
+                      v
+         y          ..
+         ^       .•'|  
+         |   .•'    | } Δy   
+         .•'    •   |      • Current Point
+    -----+----------+----  • Tangent Line
+         |    Δx    |  x   • Function Curve
+         |          |
+         v          
+      
+      [===== Controls =====]
+         Δy and Δx sliders
+
+
+Key Components:
+---------------
+
+1. Interactive Plot (D3.js)
+   - Function curve
+   - Tangent/secant lines
+   - Delta visualizations
+
+2. Controls & Exposition
+   - Coupled delta sliders
+   - Mathematical context
+   - Exploration guide
+
+Dependencies: D3.js, Tailwind CSS, MathJax
+Co-author: Claude AI
+
+-->
+
+<!DOCTYPE html>
+<html>
+  <head>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet" />
+
+    <style>
+      :root {
+        --color-amber-600: rgb(217, 119, 6);
+        --color-amber-700: rgb(180, 83, 9);
+        --color-amber-800: rgb(202, 138, 4);
+        --color-red-600: rgb(220, 38, 38);
+      }
+
+      .function-path {
+        fill: none;
+        stroke: var(--color-amber-600);
+        stroke-width: 2;
+        pointer-events: none;
+      }
+
+      .tangent-line {
+        stroke: var(--color-red-600);
+        stroke-width: 2;
+        stroke-dasharray: 4;
+        pointer-events: none;
+      }
+
+      .point {
+        fill: var(--color-red-600);
+        pointer-events: none;
+      }
+
+      .guide-line,
+      .delta-line {
+        stroke: var(--color-amber-700);
+        stroke-width: 1;
+        stroke-dasharray: 4;
+        pointer-events: none;
+        opacity: 0.5;
+      }
+
+      .delta-line {
+        stroke-dasharray: 2;
+      }
+
+      .interaction-overlay {
+        fill: transparent;
+        cursor: pointer;
+      }
+
+      .delta-line.x-emphasis,
+      .delta-line.y-emphasis {
+        stroke-width: 1.5;
+        filter: drop-shadow(0 0 2px rgba(180, 83, 9, 0.3));
+        opacity: 0.8;
+      }
+
+      .secant-line {
+        stroke: var(--color-amber-800);
+        stroke-width: 2;
+        stroke-dasharray: 4;
+        pointer-events: none;
+      }
+
+      .secant-point {
+        fill: var(--color-amber-600);
+        pointer-events: none;
+      }
+
+      body {
+        font-family: "Source Serif 4", serif;
+        zoom: 0.8;
+      }
+    </style>
+  </head>
+
+  <body class="bg-amber-50">
+    <div class="max-w-[800px] mx-auto font-[Source_Serif_4] select-none px-6 py-10 bg-amber-50">
+      <header class="mb-8">
+        <h2 class="text-2xl font-medium mb-3 text-amber-900">Interactive Derivative Explorer</h2>
+        <p class="text-amber-800/80 italic">Click and drag anywhere to explore the function and its derivative</p>
+      </header>
+
+      <div id="visualization" class="rounded-lg font-sans bg-white/80 p-8 shadow-md border border-amber-200 min-h-[500px] min-w-[750px] mb-8 relative">
+        <!-- Drag indicator -->
+        <div class="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-2 text-amber-800/60 bg-amber-50/80 px-3 py-2 rounded-md backdrop-blur-sm">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M7 11.5V14m0-2.5v-6a1.5 1.5 0 113 0m-3 6a1.5 1.5 0 00-3 0v2a7.5 7.5 0 0015 0v-5a1.5 1.5 0 00-3 0m-6-3V11m0-5.5v-1a1.5 1.5 0 013 0v1m0 0V11m0-5.5a1.5 1.5 0 013 0v3m0 0V11"></path>
+          </svg>
+          <span class="text-sm font-medium">Click & drag</span>
+        </div>
+      </div>
+
+      <!-- Legend -->
+      <div class="mt-6 mb-8 flex gap-6">
+        <div class="flex items-center">
+          <div class="w-4 h-4 bg-red-600 mr-2 rounded-sm shadow-sm"></div>
+          <span class="text-amber-900">Tangent Line</span>
+        </div>
+        <div class="flex items-center">
+          <div class="w-4 h-4 bg-yellow-600 mr-2 rounded-sm shadow-sm"></div>
+          <span class="text-amber-900">Secant Line</span>
+        </div>
+      </div>
+
+      <!-- Controls -->
+      <div class="bg-amber-100/50 rounded-lg p-6 border border-amber-200 w-1/2">
+        <h3 class="text-lg font-medium mb-4 text-amber-900">Adjust Parameters</h3>
+
+        <div class="mb-4 flex items-center gap-4 justify-center">
+          <div class="flex items-center justify-between mb-2">
+            <label for="deltaYSlider" class="text-amber-900 text-lg font-medium">Δy</label>
+          </div>
+          <input type="range" id="deltaYSlider" min="0.1" max="0.5" step="0.025" value="0.25" class="w-full h-2 bg-amber-200 rounded-lg appearance-none cursor-pointer accent-amber-600" />
+        </div>
+
+        <div class="mb-2 flex items-center gap-4 justify-center">
+          <div class="flex items-center justify-between mb-2">
+            <label for="deltaXSlider" class="text-amber-900 text-lg font-medium">Δx</label>
+          </div>
+          <input type="range" id="deltaXSlider" min="0.1" max="1.0" step="0.05" value="0.8" class="w-full h-2 bg-amber-200 rounded-lg appearance-none cursor-pointer accent-amber-600" />
+        </div>
+      </div>
+
+      <div class="mt-12 space-y-8 leading-relaxed">
+        <div>
+          <h3 class="text-lg font-medium mb-3 text-amber-900">Quick Start</h3>
+          <p class="mb-2">Click and drag anywhere on the graph to move the red point. You'll see:</p>
+          <ul class="list-disc list-inside space-y-1 ml-2">
+            <li>A red dotted line (the tangent line) that "hugs" the curve at that point</li>
+            <li>A yellow dotted line (the secant line) that connects nearby points</li>
+            <li>Play with the sliders to adjust how far apart these nearby points are!</li>
+          </ul>
+        </div>
+
+        <div>
+          <h3 class="text-lg font-medium mb-3 text-amber-900">What's Going On Here?</h3>
+          <p class="mb-3">
+            The notion of a derivative—the instantaneous rate of change at a point—is one of calculus's most elegant ideas. But it presents an interesting puzzle: how do we measure the slope of a
+            curve at a single point, when slopes inherently involve two points?
+          </p>
+          <p class="mb-3">
+            The key insight comes from examining what happens when we take two points on a curve and bring them progressively closer together. The secant line (shown in yellow) connects these two
+            points, and as they approach each other, this line approaches what we call the tangent line—the true derivative at that point.
+          </p>
+          <p class="mb-3">
+            This visualization lets you explore this limit process directly. The red tangent line shows the actual derivative, while the yellow secant line reveals the underlying mechanism of how
+            derivatives emerge from simpler ideas about slopes.
+          </p>
+
+          <p class="mt-4 border-l-2 border-amber-200 pl-4 text-sm leading-relaxed">
+            This visualization serves as a bridge between the intuitive notion of "slope at a point" and the formal limit definition of derivatives. While it captures the essential idea, the actual
+            mathematical definition requires more precision through limits: f'(x) = lim
+            <sub>h→0</sub>
+            [f(x+h) - f(x)]/h
+          </p>
+        </div>
+
+        <div>
+          <h3 class="text-lg font-medium mb-3 text-amber-900">Explore</h3>
+          <ul class="list-disc list-inside space-y-1 ml-2">
+            <li>Locate points where the derivative is zero (horizontal tangent line)</li>
+            <li>Observe how the secant line converges to the tangent line as Δx decreases</li>
+            <li>Find inflection points where the slope transitions from increasing to decreasing</li>
+          </ul>
+        </div>
+
+        <div>
+          <h3 class="text-lg font-medium mb-3 text-amber-900">Notes</h3>
+          <p class="mb-3">While this visualization helps build intuition, it's worth noting some mathematical subtleties:</p>
+          <ul class="list-disc list-inside space-y-1 ml-2">
+            <li>The true derivative is defined as a limit as Δx approaches 0, not just a "small" value</li>
+            <li>Our visualization can't show Δx getting arbitrarily close to 0 (we maintain a minimum distance for visibility)</li>
+            <li>The convergence of secant lines to the tangent line involves both left-hand and right-hand limits</li>
+            <li>At points where derivatives don't exist (cusps, discontinuities), this geometric interpretation breaks down</li>
+          </ul>
+        </div>
+      </div>
+
+      <footer class="mt-8 text-sm text-amber-700/70 italic text-center">Explore how derivatives work through interactive visualization</footer>
+      <!-- Claude Logo - Footer -->
+      <div class="flex justify-center pt-8">
+        <span class="text-amber-700/70 m-1.5 text-sm">Made with</span>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" class="w-8 h-8 fill-[#D97757]" aria-label="Claude AI Logo">
+          <path
+            d="m19.6 66.5 19.7-11 .3-1-.3-.5h-1l-3.3-.2-11.2-.3L14 53l-9.5-.5-2.4-.5L0 49l.2-1.5 2-1.3 2.9.2 6.3.5 9.5.6 6.9.4L38 49.1h1.6l.2-.7-.5-.4-.4-.4L29 41l-10.6-7-5.6-4.1-3-2-1.5-2-.6-4.2 2.7-3 3.7.3.9.2 3.7 2.9 8 6.1L37 36l1.5 1.2.6-.4.1-.3-.7-1.1L33 25l-6-10.4-2.7-4.3-.7-2.6c-.3-1-.4-2-.4-3l3-4.2L28 0l4.2.6L33.8 2l2.6 6 4.1 9.3L47 29.9l2 3.8 1 3.4.3 1h.7v-.5l.5-7.2 1-8.7 1-11.2.3-3.2 1.6-3.8 3-2L61 2.6l2 2.9-.3 1.8-1.1 7.7L59 27.1l-1.5 8.2h.9l1-1.1 4.1-5.4 6.9-8.6 3-3.5L77 13l2.3-1.8h4.3l3.1 4.7-1.4 4.9-4.4 5.6-3.7 4.7-5.3 7.1-3.2 5.7.3.4h.7l12-2.6 6.4-1.1 7.6-1.3 3.5 1.6.4 1.6-1.4 3.4-8.2 2-9.6 2-14.3 3.3-.2.1.2.3 6.4.6 2.8.2h6.8l12.6 1 3.3 2 1.9 2.7-.3 2-5.1 2.6-6.8-1.6-16-3.8-5.4-1.3h-.8v.4l4.6 4.5 8.3 7.5L89 80.1l.5 2.4-1.3 2-1.4-.2-9.2-7-3.6-3-8-6.8h-.5v.7l1.8 2.7 9.8 14.7.5 4.5-.7 1.4-2.6 1-2.7-.6-5.8-8-6-9-4.7-8.2-.5.4-2.9 30.2-1.3 1.5-3 1.2-2.5-2-1.4-3 1.4-6.2 1.6-8 1.3-6.4 1.2-7.9.7-2.6v-.2H49L43 72l-9 12.3-7.2 7.6-1.7.7-3-1.5.3-2.8L24 86l10-12.8 6-7.9 4-4.6-.1-.5h-.3L17.2 77.4l-4.7.6-2-2 .2-3 1-1 8-5.5Z" />
+        </svg>
+      </div>
+    </div>
+
+    <script>
+      const Config = {
+        create: function () {
+          const dimensions = {
+            width: 750,
+            height: 450,
+            margin: { top: 20, right: 30, bottom: 40, left: 50 },
+          };
+
+          return {
+            viz: {
+              width: dimensions.width,
+              height: dimensions.height,
+              margin: dimensions.margin,
+              innerWidth: dimensions.width - dimensions.margin.left - dimensions.margin.right,
+              innerHeight: dimensions.height - dimensions.margin.top - dimensions.margin.bottom,
+              scales: {
+                x: { domain: [-5, 5] },
+                y: { domain: [-10, 30] },
+              },
+              tangent: {
+                length: 2,
+                secantExtensionFactor: 1,
+              },
+            },
+            sliders: {
+              x: { min: 0.1, max: 1.0, default: 0.8 },
+              y: { min: 0.1, max: 0.5, default: 0.25 },
+            },
+          };
+        },
+      };
+
+      const math = {
+        calculateFunction: function (x) {
+          return 5 - 2 * x + 0.5 * Math.pow(x, 3);
+        },
+        calculateDerivative: function (x) {
+          return -2 + 1.5 * Math.pow(x, 2);
+        },
+        calculateDeltaPoints: function (state, config) {
+          const x = state.currentX;
+          const deltaX = state.currentDeltaX;
+          return {
+            current: { x, y: this.calculateFunction(x) },
+            left: { x: x - deltaX, y: this.calculateFunction(x - deltaX) },
+            right: { x: x + deltaX, y: this.calculateFunction(x + deltaX) },
+          };
+        },
+        calculateRelatedDelta: function (value, isXSlider) {
+          // When X changes, Y should be roughly proportional to the function's slope
+          if (isXSlider) {
+            return Math.min(value * 0.3, 0.5); // Y is ~1/3 of X, capped at 0.5
+          }
+          return Math.min(value * 3.0, 1.0);
+        },
+      };
+
+      const State = {
+        current: null,
+
+        create: function (config) {
+          const startX = (config.viz.scales.x.domain[1] + config.viz.scales.x.domain[0]) / 2;
+
+          State.current = {
+            currentX: startX,
+            currentDeltaX: 0.8,
+            currentDeltaY: 0.25,
+            dragging: false,
+            activeSlider: null,
+          };
+          return State.current;
+        },
+
+        update: function (updates) {
+          State.current = { ...State.current, ...updates };
+          return State.current;
+        },
+
+        get: function () {
+          return State.current;
+        },
+      };
+
+      const renderer = {
+        createLine: function (scales) {
+          return d3
+            .line()
+            .x((d) => scales.x(d.x))
+            .y((d) => scales.y(d.y));
+        },
+
+        createFunctionPath: function (scales, config) {
+          return d3.range(config.viz.scales.x.domain[0], config.viz.scales.x.domain[1], 0.1).map((x) => ({
+            x: x,
+            y: math.calculateFunction(x),
+          }));
+        },
+
+        updateFunctionPath: function (elements, scales, config) {
+          const pathPoints = this.createFunctionPath(scales, config);
+          const lineGen = this.createLine(scales);
+          elements.functionPath.attr("d", lineGen(pathPoints));
+        },
+
+        updateTangentLine: function (elements, points, slope, config, currentScales) {
+          const lineGen = renderer.createLine(currentScales);
+          const tangentPoints = [
+            {
+              x: points.current.x - config.viz.tangent.length,
+              y: points.current.y - slope * config.viz.tangent.length,
+            },
+            {
+              x: points.current.x + config.viz.tangent.length,
+              y: points.current.y + slope * config.viz.tangent.length,
+            },
+          ];
+          elements.tangentLine.attr("d", lineGen(tangentPoints));
+        },
+
+        updateSecantLine: function (elements, points, config, currentScales) {
+          const lineGen = renderer.createLine(currentScales);
+          const dx = points.right.x - points.left.x;
+          const dy = points.right.y - points.left.y;
+
+          const extendedSecantPoints = [
+            {
+              x: points.left.x - dx * config.viz.tangent.secantExtensionFactor,
+              y: points.left.y - dy * config.viz.tangent.secantExtensionFactor,
+            },
+            {
+              x: points.right.x + dx * config.viz.tangent.secantExtensionFactor,
+              y: points.right.y + dy * config.viz.tangent.secantExtensionFactor,
+            },
+          ];
+          elements.secantLine.attr("d", lineGen(extendedSecantPoints));
+        },
+
+        updateGuideLines: function (elements, points, config, scales) {
+          elements.guideLine.attr("x1", scales.x(points.current.x)).attr("y1", scales.y(points.current.y)).attr("x2", scales.x(points.current.x)).attr("y2", scales.y(config.viz.scales.y.domain[0]));
+
+          elements.guideLineY.attr("x1", scales.x(config.viz.scales.x.domain[0])).attr("y1", scales.y(points.current.y)).attr("x2", scales.x(points.current.x)).attr("y2", scales.y(points.current.y));
+        },
+
+        updateDeltaLines: function (elements, deltaPoints, activeSlider, scales) {
+          // First remove existing emphasis classes
+          elements.deltaLinesGroup.selectAll(".delta-line").classed("x-emphasis", false).classed("y-emphasis", false);
+
+          const deltaLines = elements.deltaLinesGroup.selectAll(".delta-line").data(deltaPoints);
+
+          // Enter
+          const enterLines = deltaLines.enter().append("line").attr("class", "delta-line");
+
+          // Update + Enter
+          const allLines = deltaLines
+            .merge(enterLines)
+            .attr("x1", (d) => scales.x(d.x))
+            .attr("y1", (d) => scales.y(d.y))
+            .attr("x2", (d) => scales.x(d.x2 || d.x))
+            .attr("y2", (d) => scales.y(d.y2 || d.y));
+
+          // Apply emphasis classes only if there's an active slider
+          if (activeSlider) {
+            allLines.classed("x-emphasis", (d) => d.type === "x" && activeSlider === "x").classed("y-emphasis", (d) => d.type === "y" && activeSlider === "y");
+          }
+
+          // Exit
+          deltaLines.exit().remove();
+        },
+
+        updatePoints: function (elements, points, currentScales) {
+          // Update main point
+          elements.point.attr("cx", currentScales.x(points.current.x)).attr("cy", currentScales.y(points.current.y));
+
+          // Update secant points
+          elements.secantPoints.selectAll(".secant-point").remove();
+          elements.secantPoints
+            .selectAll(".secant-point")
+            .data([points.left, points.right])
+            .enter()
+            .append("circle")
+            .attr("class", "secant-point")
+            .attr("r", 3)
+            .attr("cx", function (d) {
+              return currentScales.x(d.x);
+            })
+            .attr("cy", function (d) {
+              return currentScales.y(d.y);
+            });
+        },
+        updateSecantPoints: function (elements, points, scales) {
+          elements.secantPoints.selectAll(".secant-point").remove();
+          elements.secantPoints
+            .selectAll(".secant-point")
+            .data([points.left, points.right])
+            .enter()
+            .append("circle")
+            .attr("class", "secant-point")
+            .attr("r", 3)
+            .attr("cx", (d) => scales.x(d.x))
+            .attr("cy", (d) => scales.y(d.y));
+        },
+
+        updateElements: function (elements, state, points, scales, config) {
+          renderer.updatePoint(elements, points, scales);
+          renderer.updateGuideLines(elements, points, config, scales);
+          renderer.updateSecantPoints(elements, points, scales);
+          return elements;
+        },
+      };
+
+      // Event handlers (depends on State)
+      const events = {
+        handleMouseDown: function (state) {
+          return { ...state, dragging: true };
+        },
+
+        handleMouseMove: function (state, event, scales) {
+          if (!state.dragging) return state;
+          const [x] = d3.pointer(event);
+          return {
+            ...state,
+            currentX: scales.x.invert(x),
+          };
+        },
+
+        handleMouseUp: function (state) {
+          return { ...state, dragging: false };
+        },
+
+        handleSliderChange: function (state, config, value, isXSlider) {
+          const newValue = parseFloat(value);
+          const relatedValue = math.calculateRelatedDelta(newValue, isXSlider);
+
+          return {
+            ...state,
+            currentDeltaX: isXSlider ? newValue : relatedValue,
+            currentDeltaY: isXSlider ? relatedValue : newValue,
+            activeSlider: isXSlider ? "x" : "y",
+          };
+        },
+
+        handleSliderEnd: function (state) {
+          return { ...state, activeSlider: null };
+        },
+      };
+
+      // 6. Info panel (no dependencies)
+      const infoPanel = {
+        formatNumber: function (num) {
+          return Number(num.toFixed(2));
+        },
+        update: function (elements, data) {
+          const x0Formatted = this.formatNumber(data.x);
+          const y0Formatted = this.formatNumber(data.y);
+          const slopeFormatted = this.formatNumber(data.slope);
+
+          const updates = {
+            functionSpan: `\\[f(x) = 5 - 2x + 0.5x^3\\]`,
+            derivativeSpan: `\\[f'(x) = -2 + 1.5x^2\\]`,
+            pointSpan: `\\[\\text{Point: }\\color{rgb(180,83,9)} ({${x0Formatted}}, {${y0Formatted}})\\]`,
+            slopeSpan: `\\[\\text{Slope: }\\color{rgb(180,83,9)} {${slopeFormatted}}\\]`,
+            derivedSpan: `\\[f'\\color{rgb(180,83,9)} ({${x0Formatted}}) = -2 + 1.5(\\color{rgb(180,83,9)} {${x0Formatted}})^2 = \\color{rgb(180,83,9)} {${slopeFormatted}}\\]`,
+          };
+
+          // Apply updates
+          Object.entries(updates).forEach(([key, value]) => {
+            elements[key].html(value);
+          });
+
+          // Update MathJax
+          if (window.MathJax) {
+            MathJax.typesetPromise();
+          }
+        },
+      };
+
+      const viz = {
+        createScales: function (config) {
+          return {
+            x: d3.scaleLinear().domain(config.viz.scales.x.domain).range([0, config.viz.innerWidth]),
+            y: d3.scaleLinear().domain(config.viz.scales.y.domain).range([config.viz.innerHeight, 0]),
+          };
+        },
+
+        createElements: function (config) {
+          console.log("Creating elements with config:", config);
+
+          const svg = d3.select("#visualization").append("svg").attr("width", config.viz.width).attr("height", config.viz.height);
+
+          console.log("Created SVG:", svg.node());
+
+          const g = svg.append("g").attr("transform", `translate(${config.viz.margin.left},${config.viz.margin.top})`);
+
+          const elements = {
+            svg,
+            g,
+            functionPath: g.append("path").attr("class", "function-path"),
+            tangentLine: g.append("path").attr("class", "tangent-line"),
+            point: g.append("circle").attr("class", "point").attr("r", 5),
+            secantLine: g.append("path").attr("class", "secant-line"),
+            secantPoints: g.append("g").attr("class", "secant-points"),
+            overlay: g.append("rect").attr("class", "interaction-overlay").attr("width", config.viz.innerWidth).attr("height", config.viz.innerHeight),
+            guideLine: g.append("line").attr("class", "guide-line"),
+            guideLineY: g.append("line").attr("class", "guide-line"),
+            deltaLinesGroup: g.append("g").attr("class", "delta-lines"),
+
+            // Add info panel
+            infoPanel: (function () {
+              const panel = g.append("g").attr("class", "info-panel").attr("transform", "translate(-40, -20)");
+
+              const foreignObject = panel.append("foreignObject").attr("width", 300).attr("height", 200);
+
+              const div = foreignObject.append("xhtml:div").style("font-family", "serif").style("font-size", "16px").style("color", "rgb(41, 37, 36)").style("text-align", "left");
+
+              // Add MathJax styles
+              const style = document.createElement("style");
+              style.textContent = `
+                                .MathJax { text-align: left !important; margin-left: 0 !important; margin: 0 !important; padding: 0 !important; }
+                                .mjx-chtml { text-align: left !important; margin: 0 !important; padding: 0 !important; display: block !important; }
+                                .mjx-math { padding: 0 !important; margin: 0 !important; }
+                            `;
+              document.head.appendChild(style);
+
+              return {
+                functionSpan: div.append("div").style("margin", "0").style("padding-bottom", "8px").style("line-height", "1"),
+                derivativeSpan: div.append("div").style("margin", "0").style("padding-bottom", "10px").style("line-height", "1").style("border-bottom", "1px solid rgba(120, 113, 108, 0.2)"),
+                pointSpan: div.append("div").style("margin-top", "10px").style("padding-bottom", "8px").style("line-height", "1"),
+                slopeSpan: div.append("div").style("margin", "0").style("padding-bottom", "10px").style("line-height", "1"),
+                derivedSpan: div.append("div").style("margin", "0").style("padding-top", "10px").style("line-height", "1").style("border-top", "1px solid rgba(120, 113, 108, 0.2)"),
+              };
+            })(),
+          };
+
+          console.log("Created elements:", elements);
+          return elements;
+        },
+        setupEventHandlers: function (elements, config, scales) {
+          elements.overlay
+            .on("click", (event) => {
+              const [x] = d3.pointer(event);
+              State.update({ currentX: scales.x.invert(x) });
+              viz.update(State.get(), elements, config, scales);
+            })
+            .on("mousedown", () => {
+              State.update({ dragging: true });
+            })
+            .on("mousemove", (event) => {
+              if (!State.get().dragging) return;
+              const [x] = d3.pointer(event);
+              State.update({ currentX: scales.x.invert(x) });
+              viz.update(State.get(), elements, config, scales);
+            })
+            .on("mouseup mouseleave", () => {
+              State.update({ dragging: false });
+            });
+        },
+        setupSliders: function (elements, config, scales) {
+          const setupSlider = (id, isXSlider) => {
+            const slider = document.getElementById(id);
+            if (!slider) return;
+
+            const state = State.get();
+            slider.value = isXSlider ? state.currentDeltaX : state.currentDeltaY;
+
+            slider.addEventListener("input", (e) => {
+              const newState = events.handleSliderChange(State.get(), config, e.target.value, isXSlider);
+              State.update(newState);
+
+              const otherSlider = document.getElementById(isXSlider ? "deltaYSlider" : "deltaXSlider");
+              if (otherSlider) {
+                otherSlider.value = isXSlider ? State.get().currentDeltaY : State.get().currentDeltaX;
+              }
+
+              viz.update(State.get(), elements, config, scales);
+            });
+
+            slider.addEventListener("mouseup", () => {
+              const newState = events.handleSliderEnd(State.get());
+              State.update(newState);
+              viz.update(State.get(), elements, config, scales);
+            });
+          };
+
+          setupSlider("deltaXSlider", true);
+          setupSlider("deltaYSlider", false);
+        },
+        update: function (state, elements, config, currentScales) {
+          const points = math.calculateDeltaPoints(state, config);
+          const slope = math.calculateDerivative(points.current.x);
+
+          // Use renderer functions instead of direct D3 manipulation
+          renderer.updateFunctionPath(elements, currentScales, config);
+          renderer.updateTangentLine(elements, points, slope, config, currentScales);
+          renderer.updateSecantLine(elements, points, config, currentScales);
+          renderer.updateGuideLines(elements, points, config, currentScales);
+          renderer.updatePoints(elements, points, currentScales);
+
+          // Delta lines
+          const deltaPoints = [
+            { x: points.left.x, y: points.left.y, y2: config.viz.scales.y.domain[0], type: "x" },
+            { x: points.right.x, y: points.right.y, y2: config.viz.scales.y.domain[0], type: "x" },
+            { x: config.viz.scales.x.domain[0], x2: points.left.x, y: points.left.y, type: "y" },
+            { x: config.viz.scales.x.domain[0], x2: points.right.x, y: points.right.y, type: "y" },
+          ];
+
+          renderer.updateDeltaLines(elements, deltaPoints, state.activeSlider, currentScales);
+
+          // Update info panel
+          infoPanel.update(elements.infoPanel, {
+            x: points.current.x,
+            y: points.current.y,
+            slope: slope,
+          });
+
+          return { state, points };
+        },
+        init: function (config) {
+          State.create(config);
+          const scales = viz.createScales(config); // Now using viz.createScales
+          const elements = viz.createElements(config);
+
+          viz.setupEventHandlers(elements, config, scales);
+          viz.setupSliders(elements, config, scales);
+
+          return viz.update(State.get(), elements, config, scales);
+        },
+      };
+
+      document.addEventListener("DOMContentLoaded", function () {
+        try {
+          const config = Config.create();
+          viz.init(config);
+        } catch (error) {
+          console.error("Failed to initialize visualization:", error);
+        }
+      });
+    </script>
+  </body>
+</html>
